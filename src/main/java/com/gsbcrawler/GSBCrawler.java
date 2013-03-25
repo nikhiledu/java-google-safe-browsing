@@ -505,7 +505,7 @@ public class GSBCrawler {
 			stmt = con.createStatement();
 			rs = stmt.executeQuery(sqlQuery);
 			while (rs.next()) {
-				buildPrefixDel.add(rs.getString(0));
+				buildPrefixDel.add(rs.getString(1));
 				count++;
 				if(count == 100){
 					mergePrefixDel.append(GSBURLUtil.implode(buildPrefixDel.toArray(), "' OR `Hostkey` = '"));
