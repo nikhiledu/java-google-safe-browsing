@@ -25,12 +25,18 @@ public class GSBURLUtil {
 	 * @return Joined array elements 
 	 */
 	public static String implode(Object[] objects, String delim) {
+		//INSERT INTO "googpub-phish-shavar_add_index" (ChunkNum,Chunklen) VALUES "(233044,310)";
+		
+		
+		//INSERT INTO "googpub-phish-shavar_add_index" (ChunkNum,Chunklen) VALUES "(233071,131)";
+		//org.postgresql.util.PSQLException: ERROR: syntax error at or near ""(233071,131)""
 		StringBuilder out = new StringBuilder();
 		for(int i=0; i<objects.length; i++) {
 			if(i!=0) {
 				out.append(delim);
 			}
-			out.append((String)objects[i]);
+			
+			out.append((String)(objects[i]));		
 		}
 		return out.toString();
 	}

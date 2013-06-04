@@ -26,6 +26,8 @@ import com.gsbanalyzer.util.Utils;
  * Allowed to test a list of URLs with Google Safe Browsing.
  * You need to build a database with GSB Wrapper - Crawler before use this wrapper.
  * @author Julien SOSIN. 
+ * This code does not work with PostgreSQL, 
+ * It is modified by Liming Hu liming.hu@globalsign.com to make it work with PostgreSQL.
  */
 public class GSBAnalyzer {
 
@@ -33,6 +35,8 @@ public class GSBAnalyzer {
 	private List<GSBListEnum> listGSB;
 	private String gsbKey;
 	private String gsbUrl;
+	//googpub-phish-shavar
+	//goog-malware-shavar
 	public static String gsbPhishingList = "googpub-phish-shavar";
 	public static String gsbMalwareList = "goog-malware-shavar";
 	public static char gsbAddChunk = 'a';
@@ -62,8 +66,8 @@ public class GSBAnalyzer {
 	 * @param gsbUrl : http://safebrowsing.clients.google.com/safebrowsing/downloads by default
 	 * @param dbPrefix : Prefix you will use in YOUR database
 	 * @param dbUrl : The database url use by jdbc Example : jdbc:mysql://localhost/gsb
-	 * @param dbUsername : The database's username
-	 * @param dbPassword : The database's password
+	 * @param dbUsername : The database\'s username
+	 * @param dbPassword : The database\'s password
 	 */
 	public GSBAnalyzer(String gsbKey, String gsbUrl, String prefix, String dbUrl, String dbUsername, String dbPassword) {
 		super();
@@ -78,7 +82,7 @@ public class GSBAnalyzer {
 		listGSB.add(GSBListEnum.GSB_PHISHING_LIST);
 		try {
 			con = DriverManager.getConnection (this.dbUrl,this.dbUsername,this.dbPassword);
-			Class.forName("com.mysql.jdbc.Driver");
+			Class.forName("org.postgresql.Driver");
 		} catch (SQLException e) {
 			e.printStackTrace();
 		} catch (ClassNotFoundException e) {
@@ -119,25 +123,27 @@ public class GSBAnalyzer {
 		List<GSBEntry> matchingHostkeys;
 		GSBUrl canUrl;
 		List<GSBEntry> variations;
-		Statement stmt;
-		ResultSet rs;
+		Statement stmt = null;
+		ResultSet rs = null;
 		try {
 			stmt = con.createStatement();
 			for(GSBListEnum gsbenum : getListGSB()) {
 				matchingHostkeys = new ArrayList<GSBEntry>();
 				hostkeys = new StringBuilder();
 				prefixes = new StringBuilder();
-				buildtrunk = gsbenum.getName()+"-add";
+				buildtrunk = gsbenum.getName()+"_add";
 				//Loop over each list
 				for(GSBEntry url : urls){
 					//We check prefixes
-					hostkeys.append("`Hostkey` = '"+url.getPrefix()+"' OR ");
-					prefixes.append("`Prefix` = '"+url.getPrefix()+"' OR ");
+					hostkeys.append("Hostkey = '"+url.getPrefix()+"' OR ");
+					prefixes.append("Prefix = '"+url.getPrefix()+"' OR ");
 				}
 				//Check Hostkeys
-				sqlQuery = "SELECT DISTINCT Hostkey, Count FROM `"+prefix+buildtrunk+"-hosts` WHERE "+hostkeys.substring(0, hostkeys.length()-4);
+				//SELECT DISTINCT Hostkey, Count FROM goog_malware_shavar_add_hosts WHERE Hostkey = 292e6556
+				sqlQuery = "SELECT DISTINCT Hostkey, Count FROM "+prefix+"\""+buildtrunk+"_hosts"+"\""+" WHERE " + hostkeys.substring(0, hostkeys.length()-4);
 				rs = stmt.executeQuery(sqlQuery);
 				while(rs.next()){
+					if(!rs.isBeforeFirst()){break;}
 					for(GSBEntry url : urls){
 						if(url.getPrefix().equals(rs.getString("Hostkey"))){
 							//We count how many prefixes have this hostkey
@@ -151,14 +157,15 @@ public class GSBAnalyzer {
 							//We have to get all prefixes if count > 0
 							if(count > 0){
 								//There was a match and the count is more than one so there are prefixes!
-								//Hash up a load of prefixes and create the build query if we haven't done so already
+								//Hash up a load of prefixes and create the build query if we haven\'t done so already
 								canUrl = GSBURLUtil.Canonicalize(url.getDomain());
 								variations = makePrefixes(canUrl.getParts().getHost(),canUrl.getParts().getPath(),canUrl.getParts().getQuery(),canUrl.getParts().getusingIP());
 								//We add entries to urls to test
 								for(GSBEntry entry : variations){
-									prefixes.append("`Prefix` = '"+entry.getPrefix()+"' OR ");
+									prefixes.append("Prefix = "+entry.getPrefix()+" OR ");
 								}
-								sqlQuery = "SELECT Hostkey, Prefix FROM `"+prefix+buildtrunk+"-prefixes` WHERE ("+(prefixes.substring(0, prefixes.length()-4))+") AND `Hostkey` = '"+hostkey+"'";
+								sqlQuery = "SELECT Hostkey, Prefix FROM "+prefix+"\""+buildtrunk+"_prefixes"+"\""+" WHERE ("+(prefixes.substring(0, prefixes.length()-4))+") AND Hostkey = "+"\'"+hostkey+"\'"+"";
+								System.out.println(sqlQuery);
 								rs = stmt.executeQuery(sqlQuery);
 								while(rs.next()){
 									for(GSBEntry variation : variations){
@@ -183,7 +190,7 @@ public class GSBAnalyzer {
 					//Ask GSB for Fullhash check
 					fullhashRes = doFullLookup(matchingHostkeys);
 					split = fullhashRes.split("\n");
-					//We compare with matchingHostkeys to test if they are in the GSB's fullhash response
+					//We compare with matchingHostkeys to test if they are in the GSB\'s fullhash response
 					for(int i=1;i<split.length;i++){
 						for(GSBEntry matchingHostkey : matchingHostkeys){
 							if(matchingHostkey.getFullhash().equals(GSBURLUtil.convertASCIIToHex(split[i]))){
@@ -202,6 +209,14 @@ public class GSBAnalyzer {
 			}
 		} catch (SQLException e) {
 			e.printStackTrace();
+		}
+		finally{
+			try{
+				rs.close();
+				stmt.close();
+				con.close();
+			}
+			catch(Exception e){}
 		}
 		return res;
 	}
@@ -275,7 +290,7 @@ public class GSBAnalyzer {
 	}
 
 	/**
-	 * Checks to see if a match for a prefix is found in the sub table, if it is then we won't do
+	 * Checks to see if a match for a prefix is found in the sub table, if it is then we won\'t do
 	 *  a full-hash lookup. Return true on match in sub list, return false on negative
 	 * @param listname
 	 * @param prefixlist
@@ -283,7 +298,7 @@ public class GSBAnalyzer {
 	 * @return
 	 */
 	private boolean subCheck(String listname, List<Map<String, String>> prefixlist, String mode){
-		String buildtrunk = listname+"-sub";
+		String buildtrunk = listname+"_sub";
 		String sqlQuery;
 		List<Object[]> result; 
 		Statement stmt;
@@ -293,7 +308,8 @@ public class GSBAnalyzer {
 			if(mode.equals("prefix")) {
 				//Mode is prefix so the add part was a prefix, not a hostkey so we just check prefixes (saves a lookup)
 				for(Map<String, String> value : prefixlist){
-					sqlQuery = "SELECT * FROM `"+prefix+buildtrunk+"-prefixes` WHERE `Prefix` = '"+(String)value.get(0)+"'";
+					sqlQuery = "SELECT * FROM "+prefix+"\""+buildtrunk+"_prefixes"+"\""+" WHERE Prefix = "+(String)value.get(0)+"";
+					System.out.println(sqlQuery);
 					rs = stmt.executeQuery(sqlQuery);
 					while(rs.next()){
 						if(Integer.parseInt(rs.getString(1),16) == Integer.valueOf(value.get(1)) ) {
@@ -305,7 +321,8 @@ public class GSBAnalyzer {
 			else if(mode.equals("hostkey")){
 				//Mode is hostkey
 				for(Map<String, String> value : prefixlist){
-					sqlQuery = "SELECT * FROM `"+prefix+buildtrunk+"-prefixes` WHERE `Hostkey` = '"+(String)value.get("Hostkey")+"'";
+					sqlQuery = "SELECT * FROM "+prefix+"\""+buildtrunk+"_prefixes"+"\""+" WHERE Hostkey = "+(String)value.get("Hostkey")+"";
+					System.out.println(sqlQuery);
 					rs = stmt.executeQuery(sqlQuery);
 					while(rs.next()){
 						if(rs.getString(0).equals(value.get("Hostkey"))) {
@@ -359,8 +376,9 @@ public class GSBAnalyzer {
 		try {
 			stmt = con.createStatement();
 			for(GSBListEnum gsbenum : getListGSB()) {
-				buildtrunk = gsbenum.getName()+"-add";
-				sqlQuery = "SELECT * FROM `"+prefix+buildtrunk+"-hosts` WHERE `Hostkey` = '"+hostKey+"' AND `FullHash` != ''";
+				buildtrunk = gsbenum.getName()+"_add";
+				sqlQuery = "SELECT * FROM "+prefix+"\""+buildtrunk+"_hosts"+"\""+" WHERE Hostkey = "+hostKey+" AND FullHash != \'\'";
+				System.out.println(sqlQuery);
 				rs = stmt.executeQuery(sqlQuery);
 				if(rs.last()){
 					while(rs.next()){
@@ -370,10 +388,12 @@ public class GSBAnalyzer {
 						return res;
 					}
 				}else{
-					sqlQuery = "SELECT * FROM `"+prefix+buildtrunk+"-prefixes` WHERE `Prefix` = '"+hostKey+"' AND `FullHash` != ''";
+					sqlQuery = "SELECT * FROM "+prefix+"\""+buildtrunk+"_prefixes"+"\""+" WHERE Prefix = "+hostKey+" AND FullHash != \'\'";
+					System.out.println(sqlQuery);
 					rs = stmt.executeQuery(sqlQuery);
 					while(rs.next()){
-						sqlQuery = "SELECT * FROM `"+prefix+buildtrunk+"-hosts` WHERE `Hostkey` = '"+hostKey+"' AND `FullHash` != ''";
+						sqlQuery = "SELECT * FROM "+prefix+"\""+buildtrunk+"_hosts"+"\""+" WHERE Hostkey = "+hostKey+" AND FullHash != \'\'";
+						System.out.println(sqlQuery);
 						rs2 = stmt.executeQuery(sqlQuery);
 						while(rs2.next()){
 							if(rs.getInt(2)>0){
@@ -439,14 +459,16 @@ public class GSBAnalyzer {
 		try {
 			stmt = con.createStatement();
 			//First check hosts
-			sqlQuery = "SELECT * FROM `"+prefix+buildTrunk+"-hosts` WHERE `Hostkey` = '"+prefix+"' AND `Chunknum` = '"+chunkNum+"'";
+			sqlQuery = "SELECT * FROM "+prefix+buildTrunk+"_hosts"+"\""+" WHERE Hostkey = "+prefix+" AND Chunknum = "+chunkNum+"";
+			System.out.println(sqlQuery);
 			rs = stmt.executeQuery(sqlQuery);
 			if(rs.last()) {
 				while(rs.next()){
 					if(rs.getObject(4) != null) {
 						if(!(rs.getString(4)).isEmpty()) {
-							//We've got a live one! Insert the full hash for it   
-							sqlQuery = "UPDATE `"+buildTrunk+"-hosts` SET `FullHash` = '"+fullHash+"' WHERE `ID` = '"+rs.getString(0)+"'";
+							//We\'ve got a live one! Insert the full hash for it   
+							sqlQuery = "UPDATE "+"\""+buildTrunk+"_hosts"+"\""+" SET FullHash = "+fullHash+" WHERE ID = "+rs.getString(0)+"";
+							System.out.println(sqlQuery);
 							stmt.execute(sqlQuery);
 						}
 					}
@@ -454,16 +476,18 @@ public class GSBAnalyzer {
 			}
 			else {
 				//If there are no rows it must be a prefix      
-				sqlQuery = "SELECT * FROM `"+prefix+buildTrunk+"-prefixes` WHERE `Prefix` = '"+prefix+"'";
+				sqlQuery = "SELECT * FROM "+prefix+"\""+buildTrunk+"_prefixes"+"\""+" WHERE Prefix = "+prefix+"";
+				System.out.println(sqlQuery);
 				rs = stmt.executeQuery(sqlQuery);
 				while(rs.next()){
 					if(rs.getString(4) != null) {
 						if(!(rs.getString(4)).isEmpty()) {
-							sqlQuery2 = "SELECT * FROM `"+prefix+buildTrunk+"-hosts` WHERE `Hostkey` = '"+rs.getString(1)+"' AND `Chunknum` = '"+chunkNum+"'";
+							sqlQuery2 = "SELECT * FROM "+prefix+"\""+buildTrunk+"_hosts"+"\""+" WHERE Hostkey = "+rs.getString(1)+" AND Chunknum = "+chunkNum+"";
 							rs2 = stmt.executeQuery(sqlQuery);
 							while(rs2.next()){
 								if(Integer.parseInt(rs2.getString(3),16)>0) {
-									sqlQuery = "UPDATE `"+buildTrunk+"-prefixes` SET `FullHash` = '"+fullHash+"'";
+									sqlQuery = "UPDATE "+"\""+buildTrunk+"_prefixes"+"\""+" SET FullHash = "+fullHash+"";
+									System.out.println(sqlQuery);
 									stmt.execute(sqlQuery);
 								}
 							}
